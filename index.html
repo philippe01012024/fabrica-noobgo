@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Fábrica noobgo</title>
+<meta name="description" content="Painel do canal noobgo: radar de outliers de CS2, descoberta de canais, pautas e agenda.">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=Rubik:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+html{-webkit-text-size-adjust:100%}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+[hidden]{display:none!important}
+img{max-width:100%}
+
+/* Layout: sala de controle pixel-art; trilho de abas no topo, cada aba é um "andar" da fábrica */
+:root{
+  --bg:#141a2e; --floor:#1b2340; --panel:#222b4d; --line:#33406e; --ink:#e9ecf7; --dim:#97a1c7;
+  --yellow:#ffd23f; --ink-on-y:#1b1600;
+  --a-radar:#4cc9f0; --a-pauta:#b388ff; --a-roteiro:#ff7eb6; --a-cortes:#ff9f43; --a-titulos:#5ee6a8; --a-agenda:#ff5e5e;
+  --good:#5ee6a8; --warn:#ffb347; --bad:#ff6b6b;
+  --f-pix:"Pixelify Sans","Courier New",monospace; --f-body:"Rubik",system-ui,sans-serif; --f-mono:"JetBrains Mono",ui-monospace,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--f-body);margin:0}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+header.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:12px}
+.brand canvas{width:44px;height:44px;image-rendering:pixelated}
+.brand h1{font:700 26px/1 var(--f-pix);margin:0;letter-spacing:.5px}
+.brand h1 b{background:var(--yellow);color:var(--ink-on-y);padding:2px 7px;margin-right:6px;box-shadow:3px 3px 0 #000}
+.brand small{display:block;color:var(--dim);font:12px var(--f-mono);margin-top:4px}
+nav.tabs{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:flex;gap:8px;overflow-x:auto;padding-block:14px;margin-top:6px;border-bottom:2px solid var(--line)}
+nav.tabs a{flex:none;font:600 15px var(--f-pix);color:var(--dim);text-decoration:none;padding:7px 12px;border:2px solid var(--line);background:var(--panel)}
+nav.tabs a span{font:600 11px var(--f-mono);margin-left:6px;color:var(--ink-on-y);background:var(--yellow);padding:0 5px}
+nav.tabs a[aria-current="page"]{color:var(--ink-on-y);background:var(--yellow);border-color:var(--yellow);box-shadow:3px 3px 0 #000}
+nav.tabs a[aria-current="page"] span{background:var(--ink-on-y);color:var(--yellow)}
+a:focus-visible,button:focus-visible,select:focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
+section.view{padding-top:22px}
+h2{font:700 28px/1.1 var(--f-pix);margin:0 0 4px;text-wrap:balance}
+.sub{color:var(--dim);margin:0 0 20px;max-width:70ch}
+.eyebrow{font:600 11px var(--f-mono);letter-spacing:1.5px;text-transform:uppercase;color:var(--dim)}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+
+/* Fábrica */
+.factory{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:18px}
+@media (max-width:880px){.factory{grid-template-columns:1fr}}
+.floor{background:var(--floor);border:2px solid var(--line);padding:18px;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:32px 32px;background-position:-1px -1px}
+.desks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+@media (max-width:560px){.desks{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.desk{background:var(--bg);border:2px solid var(--line);padding:10px 10px 12px;display:flex;flex-direction:column;align-items:center;gap:6px;position:relative}
+.desk canvas{width:100%;max-width:150px;aspect-ratio:3/2;image-rendering:pixelated}
+.desk .name{font:700 14px var(--f-pix);display:flex;gap:6px;align-items:center}
+.desk .name i{font-style:normal;font:600 11px var(--f-mono);background:var(--c);color:#000;padding:0 5px}
+.desk .bar{height:5px;width:80%;background:var(--line)}
+.desk .bar b{display:block;height:100%;background:var(--c)}
+.bubble{font:12px var(--f-mono);color:var(--ink);background:var(--panel);border:1px solid var(--line);padding:3px 7px;text-align:center;min-height:2.6em;display:flex;align-items:center}
+.pill{font:600 11px var(--f-mono);padding:1px 6px;border:1px solid currentColor}
+.pill.on{color:var(--good)} .pill.wait{color:var(--warn)} .pill.off{color:var(--bad)}
+.you{margin-top:18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:var(--yellow);color:var(--ink-on-y);padding:12px 16px;border:2px solid #000;box-shadow:4px 4px 0 #000}
+.you canvas{width:72px;height:48px;image-rendering:pixelated}
+.you b{font:700 18px var(--f-pix)}
+.you p{margin:0;flex:1 1 220px;min-width:0}
+.btn{font:600 14px var(--f-pix);cursor:pointer;border:2px solid #000;padding:7px 12px;background:var(--panel);color:var(--ink);box-shadow:3px 3px 0 #000}
+.btn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #000}
+.btn.y{background:var(--yellow);color:var(--ink-on-y)}
+.btn.dark{background:var(--ink-on-y);color:var(--yellow)}
+.btn[disabled]{opacity:.5;cursor:default}
+aside.log{background:var(--panel);border:2px solid var(--line);padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+aside.log ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;font:12px/1.45 var(--f-mono)}
+aside.log li{border-left:3px solid var(--c,var(--line));padding-left:8px;color:var(--dim)}
+aside.log li b{color:var(--ink);font-weight:600}
+.legend{display:grid;gap:6px;font:13px var(--f-body)}
+.legend div{display:flex;gap:8px;align-items:center}
+.legend s{width:10px;height:10px;background:var(--c);display:inline-block}
+
+/* Radar */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:20px}
+@media (max-width:700px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kpi{background:var(--panel);border:2px solid var(--line);padding:12px}
+.kpi b{display:block;font:700 30px/1.1 var(--f-pix);color:var(--yellow)}
+.kpi span{font-size:13px;color:var(--dim)}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.chip{font:600 12px var(--f-mono);cursor:pointer;padding:5px 10px;border:2px solid var(--line);background:var(--panel);color:var(--dim)}
+.chip[aria-pressed="true"]{border-color:var(--c,var(--yellow));color:var(--ink);background:var(--bg)}
+.chip s{display:inline-block;width:8px;height:8px;background:var(--c,var(--yellow));margin-right:6px}
+.tablebox{overflow-x:auto;border:2px solid var(--line);background:var(--floor)}
+table{border-collapse:collapse;width:100%;min-width:680px}
+th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font:600 11px var(--f-mono);letter-spacing:1px;text-transform:uppercase;color:var(--dim);background:var(--panel)}
+td.t{max-width:420px}
+td .ch{font:600 11px var(--f-mono);color:var(--c)}
+.mult{display:flex;align-items:center;gap:8px;min-width:150px}
+.mult i{height:10px;background:var(--c);display:block}
+.mult b{font:600 14px var(--f-mono);font-variant-numeric:tabular-nums;min-width:44px}
+.mult b.hot{color:var(--yellow)}
+.note{font-size:13px;color:var(--dim);margin-top:10px;max-width:80ch}
+.cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:26px}
+@media (max-width:760px){.cols{grid-template-columns:1fr}}
+.card{background:var(--panel);border:2px solid var(--line);padding:16px;min-width:0}
+.card h3{font:700 18px var(--f-pix);margin:0 0 10px}
+.chlist{list-style:none;padding:0;margin:0;display:grid;gap:8px}
+.chlist li{display:flex;justify-content:space-between;gap:10px;align-items:baseline;border-bottom:1px dashed var(--line);padding-bottom:6px;font-size:14px}
+.chlist li a{color:var(--ink)}
+.signals{display:grid;gap:10px}
+.sig{border-left:4px solid var(--c);padding:4px 0 4px 10px}
+.sig b{font:700 15px var(--f-pix)}
+.sig p{margin:2px 0 0;font-size:14px;color:var(--dim)}
+
+/* Pautas */
+.queue{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+@media (max-width:820px){.queue{grid-template-columns:1fr}}
+.pcard{background:var(--panel);border:2px solid var(--line);display:flex;flex-direction:column;min-width:0}
+.pcard .head{background:var(--yellow);color:var(--ink-on-y);padding:12px 14px;display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.pcard .head h3{font:700 19px/1.15 var(--f-pix);margin:0;text-wrap:balance}
+.pcard .head .score{font:700 22px var(--f-pix);background:var(--ink-on-y);color:var(--yellow);padding:2px 8px;flex:none}
+.pcard .body{padding:12px 14px;display:flex;flex-direction:column;gap:10px;flex:1}
+.pcard .body p{margin:0;font-size:14px}
+.ev{list-style:none;padding:0;margin:0;display:grid;gap:4px;font:12px var(--f-mono)}
+.ev li{display:flex;gap:8px;color:var(--dim)} .ev li b{color:var(--yellow);min-width:44px}
+.tags{display:flex;flex-wrap:wrap;gap:6px}
+.tag{font:600 11px var(--f-mono);border:1px solid var(--line);padding:1px 6px;color:var(--dim)}
+.tag.risk-baixo{color:var(--good);border-color:var(--good)} .tag.risk-médio{color:var(--warn);border-color:var(--warn)} .tag.risk-alto{color:var(--bad);border-color:var(--bad)}
+.pcard .actions{display:flex;flex-wrap:wrap;gap:8px;padding:0 14px 14px}
+.status{font:600 12px var(--f-mono);padding:3px 8px;align-self:flex-start}
+.status.aprovada{background:var(--good);color:#04210f} .status.revisar{background:var(--warn);color:#2a1700}
+.titles{background:var(--bg);border:1px solid var(--line);padding:10px;font-size:14px;white-space:pre-wrap;min-height:2em}
+.titles:empty{display:none}
+
+/* Agenda */
+.week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+@media (max-width:760px){.week{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.day{background:var(--floor);border:2px solid var(--line);padding:10px;min-height:120px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.day h4{margin:0;font:700 14px var(--f-pix)}
+.slot{font-size:12px;padding:6px;border-left:4px solid var(--c);background:var(--panel)}
+.slot b{font:600 11px var(--f-mono);display:block;color:var(--dim)}
+.steps{display:grid;gap:10px;counter-reset:s;margin:0;padding:0;list-style:none}
+.steps li{counter-increment:s;display:flex;gap:12px;align-items:flex-start}
+.steps li::before{content:counter(s);font:700 15px var(--f-pix);background:var(--yellow);color:var(--ink-on-y);min-width:28px;text-align:center;padding:2px 0}
+.steps li p{margin:0;font-size:14px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+
+/* ---- versão ao vivo ---- */
+.banner{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;background:var(--panel);border:2px solid var(--yellow);padding:10px 14px;margin-top:16px}
+.banner p{margin:0;font-size:14px;min-width:0;flex:1 1 260px}
+.banner.ok{border-color:var(--good)}
+.banner.err{border-color:var(--bad)}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:12px}
+.toolbar .group{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+th button.sort{all:unset;cursor:pointer;display:inline-flex;gap:6px;align-items:center;font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit}
+th button.sort:focus-visible{outline:2px solid var(--yellow);outline-offset:3px}
+th button.sort::after{content:"↕";opacity:.45}
+th[aria-sort="ascending"] button.sort::after{content:"↑";opacity:1;color:var(--yellow)}
+th[aria-sort="descending"] button.sort::after{content:"↓";opacity:1;color:var(--yellow)}
+th[aria-sort] {color:var(--ink)}
+td a.vid{color:var(--ink);text-decoration:none}
+td a.vid:hover{text-decoration:underline}
+.new{font:600 10px var(--f-mono);color:var(--bg);background:var(--a-radar);padding:0 4px;margin-left:6px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font:600 12px var(--f-mono);color:var(--dim);letter-spacing:.5px}
+input[type=text],input[type=password],input[type=search]{font:14px var(--f-mono);color:var(--ink);background:var(--bg);border:2px solid var(--line);padding:8px 10px;width:100%;min-width:0}
+input:focus-visible{outline:3px solid var(--yellow);outline-offset:1px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+.row .field{flex:1 1 240px}
+.chans{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.chans li{display:flex;gap:8px;align-items:center;justify-content:space-between;border-bottom:1px dashed var(--line);padding-bottom:6px;font-size:14px}
+.chans li .who{display:flex;gap:8px;align-items:center;min-width:0}
+.chans li .who s{width:10px;height:10px;background:var(--c);flex:none}
+.chans li a{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.x{all:unset;cursor:pointer;font:600 12px var(--f-mono);color:var(--dim);padding:2px 6px;border:1px solid var(--line)}
+.x:hover,.x:focus-visible{color:var(--bad);border-color:var(--bad)}
+.disc{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-top:14px}
+.dcard{background:var(--floor);border:2px solid var(--line);padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.dcard .top{display:flex;gap:10px;align-items:center;min-width:0}
+.dcard img{width:40px;height:40px;image-rendering:auto;border:2px solid var(--line);flex:none}
+.dcard h4{margin:0;font:700 15px var(--f-pix);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dcard h4 a{color:var(--ink);text-decoration:none}
+.dcard .stats{display:flex;flex-wrap:wrap;gap:6px}
+.dcard p{margin:0;font-size:13px;color:var(--dim);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.why{font:600 11px var(--f-mono);color:var(--yellow)}
+.steps a{color:var(--yellow)}
+.empty{padding:28px 16px;text-align:center;color:var(--dim);font-size:14px}
+.spin{display:inline-block;width:10px;height:10px;background:var(--yellow);animation:blink .6s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+.muted{color:var(--dim);font-size:13px}
+
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <div class="brand">
+    <canvas id="logo" width="16" height="16" aria-hidden="true"></canvas>
+    <div><h1><b>noobgo</b>Fábrica</h1><small>o escritório dos agentes do canal · CS2 / mercado de skins</small></div>
+  </div>
+  <div class="group" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <span class="eyebrow mono" id="stamp">–</span>
+    <button class="btn y" id="refreshBtn" type="button">Atualizar dados</button>
+  </div>
+</header>
+
+<div class="banner" id="banner" hidden><p id="bannerText"></p><a class="btn" href="#config" id="bannerBtn">Configurar</a></div>
+
+<nav class="tabs" aria-label="Andares da fábrica">
+  <a href="#fabrica" data-v="fabrica">Fábrica</a>
+  <a href="#radar" data-v="radar">Radar de outliers</a>
+  <a href="#descobrir" data-v="descobrir">Descobrir canais</a>
+  <a href="#pautas" data-v="pautas">Aprovação <span id="qcount">6</span></a>
+  <a href="#agenda" data-v="agenda">Agenda</a>
+  <a href="#config" data-v="config">Configuração</a>
+</nav>
+
+<!-- FÁBRICA -->
+<section class="view" id="v-fabrica">
+  <h2>Chão de fábrica</h2>
+  <p class="sub">Seis agentes, um por etapa. Os que estão acesos já trabalham neste painel; os outros esperam a próxima fase.</p>
+  <div class="factory">
+    <div class="floor">
+      <div class="desks" id="desks"></div>
+      <div class="you">
+        <canvas id="youSprite" width="24" height="16" aria-hidden="true"></canvas>
+        <p><b>Você · mesa de aprovação</b><br><span id="youText"></span></p>
+        <a class="btn dark" href="#pautas">Abrir fila</a>
+      </div>
+    </div>
+    <aside class="log">
+      <div class="eyebrow">Diário da fábrica</div>
+      <ol id="log"></ol>
+      <div class="eyebrow" style="margin-top:6px">Agentes</div>
+      <div class="legend" id="legend"></div>
+    </aside>
+  </div>
+</section>
+
+<!-- RADAR -->
+<section class="view" id="v-radar" hidden>
+  <h2>Radar de outliers</h2>
+  <p class="sub">Multiplicador = views do vídeo ÷ mediana dos últimos 50 vídeos do mesmo formato no próprio canal. Acima de 2x é tema que o público pediu mais do que o normal.</p>
+  <div class="kpis">
+    <div class="kpi"><b class="mono" id="k1">–</b><span>vídeos analisados</span></div>
+    <div class="kpi"><b class="mono" id="k2">–</b><span>canais com dados</span></div>
+    <div class="kpi"><b class="mono" id="k3">–</b><span>maior multiplicador</span></div>
+    <div class="kpi"><b class="mono" id="k4">–</b><span>vídeos acima de 2x</span></div>
+  </div>
+  <div class="toolbar">
+    <div class="group" id="fmt" role="group" aria-label="Formato">
+      <button class="chip" type="button" data-fmt="long">Vídeos longos</button>
+      <button class="chip" type="button" data-fmt="short">Shorts</button>
+    </div>
+    <div class="group" role="group" aria-label="Período">
+      <button class="chip" type="button" data-per="90">90 dias</button>
+      <button class="chip" type="button" data-per="365">1 ano</button>
+      <button class="chip" type="button" data-per="0">Tudo</button>
+    </div>
+  </div>
+  <div class="filters" id="filters" role="group" aria-label="Filtrar por canal"></div>
+  <div class="tablebox"><table>
+    <thead><tr>
+      <th>#</th><th>Vídeo</th>
+      <th data-k="x"><button class="sort" type="button" data-k="x">Multiplicador</button></th>
+      <th data-k="v"><button class="sort" type="button" data-k="v">Views</button></th>
+      <th data-k="d"><button class="sort" type="button" data-k="d">Data</button></th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+  <p class="note" id="radarNote"></p>
+
+  <div class="cols">
+    <div class="card">
+      <h3>Canais no radar</h3>
+      <ul class="chans" id="chlist"></ul>
+      <form class="row" id="addForm" style="margin-top:12px">
+        <div class="field"><label for="addHandle">Adicionar canal (@handle ou link)</label><input type="text" id="addHandle" placeholder="@canal ou youtube.com/@canal" autocomplete="off"></div>
+        <button class="btn" type="submit">Adicionar</button>
+      </form>
+      <p class="muted" id="addMsg"></p>
+    </div>
+    <div class="card">
+      <h3>O que a análise de 03/11 mostrou</h3>
+      <div class="signals">
+        <div class="sig" style="--c:var(--good)"><b>Valve + mercado + urgência</b><p>Atualização que mexe em trade up ou preço foi o padrão mais forte: 3,7x no Anomaly, 2,0–2,3x três vezes no MasterShiny.</p></div>
+        <div class="sig" style="--c:var(--good)"><b>Desafio com dinheiro no título</b><p>"50 trade ups de ouro ($25.000)" fez 3,7x no JuicyCSG.</p></div>
+        <div class="sig" style="--c:var(--warn)"><b>Abertura de caixa é loteria</b><p>De 0,2x a 1,7x no Anomaly. Só funciona com resultado raro na thumbnail.</p></div>
+        <div class="sig" style="--c:var(--bad)"><b>Rankings e listas perdem</b><p>"Top 5 caixas" (0,4x) e "ranqueei todo investimento" (0,5x) ficaram abaixo da média.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- DESCOBRIR -->
+<section class="view" id="v-descobrir" hidden>
+  <h2>Descobrir canais</h2>
+  <p class="sub">Dois jeitos de achar concorrentes novos, ambos gratuitos: buscar por tema no YouTube, ou ver quais canais os seus concorrentes indicam na página deles.</p>
+  <div class="cols" style="margin-top:0">
+    <form class="card" id="searchForm">
+      <h3>Buscar por tema</h3>
+      <div class="field"><label for="q">Tema ou palavra-chave</label><input type="search" id="q" value="mercado de skins cs2"></div>
+      <div class="row" style="margin-top:10px">
+        <div class="group" role="group" aria-label="Idioma" style="display:flex;gap:8px">
+          <button class="chip" type="button" data-lang="pt" aria-pressed="true">Português</button>
+          <button class="chip" type="button" data-lang="en" aria-pressed="false">Inglês</button>
+        </div>
+        <button class="btn y" type="submit" style="margin-left:auto">Buscar canais</button>
+      </div>
+      <p class="muted" style="margin:10px 0 0">Gasta 1 de 100 buscas gratuitas por dia.</p>
+    </form>
+    <div class="card">
+      <h3>Indicados pelos concorrentes</h3>
+      <p style="margin:0 0 12px;font-size:14px">Lê a seção "canais em destaque" de cada canal do radar e mostra os que aparecem mais vezes.</p>
+      <button class="btn y" type="button" id="featBtn">Ver indicados</button>
+      <p class="muted" style="margin:10px 0 0">Gasta cerca de 1 unidade por canal do radar.</p>
+    </div>
+  </div>
+  <p class="note" id="discMsg"></p>
+  <div class="disc" id="disc"></div>
+</section>
+
+<!-- PAUTAS -->
+<section class="view" id="v-pautas" hidden>
+  <h2>Fila de aprovação</h2>
+  <p class="sub">Pautas para o seu canal, montadas a partir dos outliers. Aprove as que você vai gravar. "Copiar prompt" leva a pauta pronta para o Claude escrever títulos e descrição.</p>
+  <div class="queue" id="queue"></div>
+</section>
+
+<!-- AGENDA -->
+<section class="view" id="v-agenda" hidden>
+  <h2>Agenda da semana</h2>
+  <p class="sub">Sugestão de ritmo: 1 vídeo longo e 4 shorts por semana, no YouTube e no TikTok. Pautas aprovadas entram nos espaços livres.</p>
+  <div class="week" id="week"></div>
+  <div class="cols">
+    <div class="card">
+      <h3>Como postar de graça</h3>
+      <ol class="steps">
+        <li><p><b>YouTube:</b> envie o short como privado no YouTube Studio e escolha "Programar" com a data desta grade.</p></li>
+        <li><p><b>TikTok:</b> no site do TikTok Studio, ative "Programar vídeo" ao enviar. Agenda de 15 minutos até 10 dias à frente e pede conta comercial no computador.</p></li>
+        <li><p><b>Próxima fase:</b> cortes automáticos com Whisper + ffmpeg no seu computador, também gratuitos.</p></li>
+      </ol>
+    </div>
+    <div class="card">
+      <h3>Horários sugeridos</h3>
+      <p style="margin:0;font-size:14px">Shorts às 18h e vídeo longo às 12h, horário de Brasília. Depois de 4 semanas, ajuste pelos horários de pico do seu YouTube Studio.</p>
+    </div>
+  </div>
+</section>
+
+<!-- CONFIG -->
+<section class="view" id="v-config" hidden>
+  <h2>Configuração</h2>
+  <p class="sub">O painel usa a API oficial do YouTube com a sua chave gratuita. A chave fica salva só neste navegador; ela não vai para o GitHub nem para ninguém.</p>
+  <div class="cols" style="margin-top:0">
+    <form class="card" id="keyForm">
+      <h3>Sua chave da API</h3>
+      <div class="field"><label for="apiKey">Chave da YouTube Data API v3</label><input type="password" id="apiKey" autocomplete="off" placeholder="AIza…"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn y" type="submit">Salvar e testar</button>
+        <button class="btn" type="button" id="clearKey">Apagar chave</button>
+      </div>
+      <p class="muted" id="keyMsg" style="margin:10px 0 0"></p>
+    </form>
+    <div class="card">
+      <h3>Criar a chave (5 min, grátis)</h3>
+      <ol class="steps">
+        <li><p>Abra o <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud Console</a> e crie um projeto chamado "fabrica-noobgo".</p></li>
+        <li><p>Em <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">YouTube Data API v3</a>, clique em Ativar.</p></li>
+        <li><p>Em <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Credenciais</a>, crie uma "Chave de API".</p></li>
+        <li><p>Na chave, restrinja a "Sites" com o endereço deste painel e a API "YouTube Data API v3". Assim ninguém consegue usar sua chave em outro lugar.</p></li>
+        <li><p>Cole a chave ao lado e clique em Salvar e testar.</p></li>
+      </ol>
+    </div>
+  </div>
+  <div class="card" style="margin-top:18px">
+    <h3>Uso da cota hoje</h3>
+    <p style="margin:0;font-size:14px" id="quota"></p>
+  </div>
+</section>
+</div>
+
+<script>
+const SAMPLE_VIDEOS=[{"c": "polex", "t": "é... proplayer desmereceu a FURIA e FalleN respondeu ao vivo", "v": 810750, "d": "2024-08-27", "x": 5.08}, {"c": "polex", "t": "sim... eu finalmente comprei o teclado PROIBIDO e testei a fiscalização da VALVE", "v": 775930, "d": "2024-09-20", "x": 4.86}, {"c": "polex", "t": "THUNDERPICK WC 2026 - GRANDE FINAL", "v": 619700, "d": "2026-10-18", "x": 3.88}, {"c": "juicy", "t": "I Did 50 Gold Trade Ups.. AND GOT THE BEST ITEM! ($25,000)", "v": 374000, "d": "2026-10-12", "x": 3.75}, {"c": "polex", "t": "Um profissional do Valorant avaliando um Global no CS jogando RANKED", "v": 588130, "d": "2026-02-14", "x": 3.69}, {"c": "anomaly", "t": "NEW CS2 KNIFE TRADEUP UPDATE (TRADING IS OVER)", "v": 1097777, "d": "2025-10-23", "x": 3.67}, {"c": "polex", "t": "Joguei um CAMPEONATO de CS 2 depois de meses e esse foi o resultado", "v": 480240, "d": "2025-06-05", "x": 3.01}, {"c": "polex", "t": "PGL MASTERS BUCHAREST 2026 - GRANDE FINAL", "v": 446080, "d": "2026-11-01", "x": 2.79}, {"c": "shiny", "t": "Valve's New Letter Is Crazy For CS2 Investing", "v": 30900, "d": "2026-09-14", "x": 2.31}, {"c": "anomaly", "t": "ANOMALY STOPS BEING FAT (WEIGHT LOSS JOURNEY)", "v": 642776, "d": "2026-04-01", "x": 2.15}, {"c": "shiny", "t": "CS2's Next Update Is Massive? | Coming Next For CS2 Investing", "v": 27100, "d": "2026-09-11", "x": 2.02}, {"c": "shiny", "t": "VALVE's BIGGEST UPDATE OF 2026 FOR CS2 (NEW GAMEMODE)", "v": 26900, "d": "2026-09-23", "x": 2.01}, {"c": "shiny", "t": "This Is Your LAST CHANCE For The Best CS2 Investment", "v": 26600, "d": "2026-09-04", "x": 1.99}, {"c": "anomaly", "t": "MY BEST CASE OPENING EVER (ULTRA RARE PATTERN)", "v": 518316, "d": "2026-03-28", "x": 1.73}, {"c": "anomaly", "t": "HUGE CS2 ANIMATION OVERHAUL UPDATE (300+ NEW ANIMATIONS)", "v": 471036, "d": "2025-07-29", "x": 1.58}, {"c": "anomaly", "t": "CACHE IS BACK IN CS2 (INSANE UPDATE)", "v": 467570, "d": "2026-04-29", "x": 1.56}, {"c": "anomaly", "t": "VALVE CHANGED THE MARKET FOREVER... (HUGE UPDATE)", "v": 427333, "d": "2026-05-13", "x": 1.43}, {"c": "shiny", "t": "Valve Just Turned THIS OFF For CS2 Investing", "v": 19100, "d": "2026-09-23", "x": 1.43}, {"c": "juicy", "t": "30 Minutes To Unbox All 3 RGB Mews (Pokemon Card Challenge)", "v": 133000, "d": "2026-10-20", "x": 1.33}, {"c": "anomaly", "t": "6am cs2 moments", "v": 383984, "d": "2026-04-22", "x": 1.28}, {"c": "anomaly", "t": "NEW SOUVENIR TRADE UP UPDATE (CRAFTABLE SOUVENIRS)", "v": 354202, "d": "2026-05-22", "x": 1.18}, {"c": "anomaly", "t": "NEW CS2 ARMORY PASS UPDATE + 4 NEW MAPS (83 NEW SKINS)", "v": 353258, "d": "2025-10-02", "x": 1.18}, {"c": "anomaly", "t": "HUGE CS2 SEASON 4 MAP UPDATE (40 NEW SKINS)", "v": 338349, "d": "2026-01-22", "x": 1.13}, {"c": "shiny", "t": "Valve's Update Just Crashed This Market For CS2 Investing", "v": 15100, "d": "2026-09-30", "x": 1.13}, {"c": "anomaly", "t": "Was CS:GO really better before? (CS:GO Supremacy Mod)", "v": 331911, "d": "2026-02-10", "x": 1.11}, {"c": "shiny", "t": "Valve's Secret Indicator JUST WENT OFF For CS2 Investing", "v": 14800, "d": "2026-09-18", "x": 1.1}, {"c": "anomaly", "t": "OPENING 200 DEAD HAND CASES (NEW GLOVE UNBOXING)", "v": 319390, "d": "2026-03-23", "x": 1.07}, {"c": "anomaly", "t": "I GOT MY DRIVERS LICENSE (BUYING DREAM CAR)", "v": 303172, "d": "2026-05-28", "x": 1.01}, {"c": "anomaly", "t": "THE CS2 E-GIRL EXPERIENCE", "v": 301990, "d": "2026-05-08", "x": 1.01}, {"c": "juicy", "t": "Donating $10,000 To Streamers With 0 Viewers!", "v": 99700, "d": "2026-10-04", "x": 1.0}, {"c": "shiny", "t": "What's Happening Right NOW For CS2 Investing", "v": 13400, "d": "2026-09-09", "x": 1.0}, {"c": "anomaly", "t": "CS2 HUGE TRADE REFUND UPDATE (VALVE KILLED TRADING?)", "v": 296064, "d": "2025-07-16", "x": 0.99}, {"c": "shiny", "t": "What's Happening Right Now For CS2 Investing", "v": 12200, "d": "2026-10-02", "x": 0.91}, {"c": "shiny", "t": "Everything To Know From CS2's Latest Update", "v": 11600, "d": "2026-09-26", "x": 0.87}, {"c": "anomaly", "t": "100x GENESIS CASE UNBOXING (EXTREME LUCK)", "v": 242467, "d": "2025-09-21", "x": 0.81}, {"c": "anomaly", "t": "I 1V1 ALL MY FRIENDS (WHO'S BEST?)", "v": 222076, "d": "2025-10-07", "x": 0.74}, {"c": "anomaly", "t": "CS2 1200 CASE BATTLE BINGO (3 KNIFE UNBOXINGS)", "v": 219056, "d": "2025-08-04", "x": 0.73}, {"c": "anomaly", "t": "OPENING 400 OLD OPERATION CASES (EXTREME LUCK)", "v": 212887, "d": "2025-11-19", "x": 0.71}, {"c": "anomaly", "t": "THE 1000 ELO PREMIERE EXPERIECE", "v": 213515, "d": "2025-08-10", "x": 0.71}, {"c": "anomaly", "t": "NEW CS2 ANCIENT NIGHT UPDATE (LIMITED EDITION M4 SKIN)", "v": 205410, "d": "2025-08-15", "x": 0.69}, {"c": "anomaly", "t": "CS2 CASES ARE DONE (IS THIS THE END?)", "v": 190332, "d": "2026-03-07", "x": 0.64}, {"c": "anomaly", "t": "VIRTUAL REALITY CS2", "v": 188575, "d": "2026-04-09", "x": 0.63}, {"c": "juicy", "t": "THE CRAZIEST POKEMON PULLS OF MY LIFE...", "v": 56800, "d": "2026-10-31", "x": 0.57}, {"c": "anomaly", "t": "OPENING 6 OF EVERY CS2 CASE EVER (252 CASE UNBOX)", "v": 167706, "d": "2025-08-26", "x": 0.56}, {"c": "juicy", "t": "I Hosted a $10,000 Silver CS2 Tournament!", "v": 56200, "d": "2026-10-26", "x": 0.56}, {"c": "shiny", "t": "I Ranked EVERY CS2 Investment For CS2 Investing", "v": 7000, "d": "2026-09-28", "x": 0.52}, {"c": "shiny", "t": "What I AM Buying Right NOW For CS2 Investing", "v": 7000, "d": "2026-09-02", "x": 0.52}, {"c": "anomaly", "t": "TWITCH HIGHLIGHTS 36 - TROLLING RAAD", "v": 150003, "d": "2026-01-13", "x": 0.5}, {"c": "shiny", "t": "This Area Is CRAZY Right NOW For CS2 Investing", "v": 6000, "d": "2026-09-21", "x": 0.45}, {"c": "anomaly", "t": "OPENING 600 OF MY VIEWER'S CASES (AND GIVING THE SKINS BACK)", "v": 131899, "d": "2025-09-15", "x": 0.44}, {"c": "anomaly", "t": "THE RUSSIAN PREMIER EXPERIENCE", "v": 114575, "d": "2025-07-23", "x": 0.38}, {"c": "shiny", "t": "The Top 5 BEST CS2 Cases You NEED To See For CS2 Investing", "v": 4900, "d": "2026-09-16", "x": 0.37}, {"c": "shiny", "t": "I Traded Up EVERY CS2 Skin From Cases", "v": 3800, "d": "2026-09-07", "x": 0.28}, {"c": "anomaly", "t": "NEW GENESIS COLLECTION CASE OPENING (NEW TYPE OF CASE)", "v": 50664, "d": "2025-09-17", "x": 0.17}];
+"use strict";
+/* ================= configuração ================= */
+const MY_HANDLE = "@canalnoobgo";
+const DEFAULT_HANDLES = [MY_HANDLE,"@AnomalyClips","@ArrowCS3","@slyk","@biskela","@CanalDoPolex","@OzznyCS2","@drewCS2","@JuicyCSG","@MasterShiny","@TechsavvyCS"];
+const PALETTE = ["var(--a-radar)","var(--a-cortes)","var(--a-titulos)","var(--a-roteiro)","var(--a-pauta)","var(--a-agenda)","#7dd3fc","#fca5a5","#c4b5fd","#86efac","#fde68a","#f9a8d4"];
+const API = "https://www.googleapis.com/youtube/v3/";
+const LS = {key:"fab.key",handles:"fab.handles",data:"fab.data",pautas:"fab.pautas",quota:"fab.quota",ui:"fab.ui"};
+const SHORT_MAX = 180; // segundos: Shorts podem ter até 3 min
+
+/* ================= armazenamento seguro ================= */
+const store = {
+  get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},
+  del(k){try{localStorage.removeItem(k)}catch(e){}}
+};
+
+/* ================= estado ================= */
+let KEY = store.get(LS.key,"");
+let HANDLES = store.get(LS.handles,DEFAULT_HANDLES.slice());
+let DATA = store.get(LS.data,null);           // {updated, channels:{id:{...}}, videos:[...]}
+const PSTATE = store.get(LS.pautas,{});
+const UI = Object.assign({fmt:"long",per:0,ch:"all",sk:"x",sd:"desc"},store.get(LS.ui,{}));
+let busy = false, discLang = "pt";
+const LOG = [];
+
+/* ================= utilidades ================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmtN = n => n==null?"–":n>=1e6?(n/1e6).toFixed(n>=1e7?1:2).replace(".",",")+" mi":n>=1e3?Math.round(n/1e3)+" mil":String(n);
+const fmtX = x => x.toFixed(1).replace(".",",")+"x";
+const fmtD = iso => iso.slice(0,10).split("-").reverse().join("/");
+const median = a => {if(!a.length)return 0;const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
+function isoDur(s){const m=/P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(s||"");if(!m)return 0;return (+m[1]||0)*86400+(+m[2]||0)*3600+(+m[3]||0)*60+(+m[4]||0)}
+function normHandle(s){s=String(s||"").trim();const m=s.match(/youtube\.com\/(@[\w.\-]+)/i);if(m)return m[1];const c=s.match(/youtube\.com\/channel\/(UC[\w-]{22})/i);if(c)return c[1];if(/^UC[\w-]{22}$/.test(s))return s;s=s.replace(/^https?:\/\/\S*\//,"");return s?(s.startsWith("@")?s:"@"+s):""}
+const same = (a,b) => a.toLowerCase()===b.toLowerCase();
+function pacificDay(){return new Date().toLocaleDateString("en-CA",{timeZone:"America/Los_Angeles"})}
+function addQuota(kind,n=1){const q=store.get(LS.quota,{});const d=pacificDay();if(q.day!==d){q.day=d;q.units=0;q.search=0}q[kind]=(q[kind]||0)+n;store.set(LS.quota,q);renderQuota()}
+function log(who,txt,c){LOG.unshift({who,txt,c});LOG.length=Math.min(LOG.length,8);renderLog()}
+
+/* ================= API do YouTube ================= */
+class ApiError extends Error{constructor(msg,code){super(msg);this.code=code}}
+async function yt(path,params,kind="units"){
+  if(!KEY)throw new ApiError("Falta a chave da API. Abra Configuração e cole sua chave.","nokey");
+  const url=API+path+"?"+new URLSearchParams({...params,key:KEY});
+  let r;
+  try{r=await fetch(url)}catch(e){throw new ApiError("Sem conexão com o YouTube. Verifique a internet e tente de novo.","net")}
+  addQuota(kind,1);
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok||j.error){
+    const reason=(j.error&&j.error.errors&&j.error.errors[0]&&j.error.errors[0].reason)||"";
+    const msg=(j.error&&j.error.message)||("Erro "+r.status);
+    if(/quota/i.test(reason))throw new ApiError("A cota gratuita de hoje acabou. Ela renova às 4h ou 5h (horário de Brasília).","quota");
+    if(/keyInvalid|API_KEY_INVALID/i.test(reason+msg))throw new ApiError("A chave não foi aceita. Confira se copiou inteira.","key");
+    if(/accessNotConfigured|SERVICE_DISABLED|has not been used/i.test(reason+msg))throw new ApiError("A YouTube Data API v3 não está ativada no seu projeto do Google Cloud.","disabled");
+    if(/referer|Referer|ipRefererBlocked/i.test(reason+msg))throw new ApiError("A restrição de site da chave está bloqueando este endereço. Adicione o endereço deste painel na chave.","referer");
+    throw new ApiError(msg,"other");
+  }
+  return j;
+}
+async function resolveChannel(h){
+  const p={part:"snippet,statistics,contentDetails"};
+  if(/^UC[\w-]{22}$/.test(h))p.id=h;else p.forHandle=h;
+  const j=await yt("channels",p);
+  const it=j.items&&j.items[0];
+  if(!it)throw new ApiError("Canal "+h+" não encontrado.","notfound");
+  return chanFromItem(it,h);
+}
+function chanFromItem(it,h){
+  const s=it.statistics||{},sn=it.snippet||{};
+  return {id:it.id,handle:h||sn.customUrl||it.id,title:sn.title||h,thumb:(sn.thumbnails&&(sn.thumbnails.default||{}).url)||"",
+    country:sn.country||"",subs:s.hiddenSubscriberCount?null:+s.subscriberCount||0,views:+s.viewCount||0,count:+s.videoCount||0,
+    uploads:it.contentDetails&&it.contentDetails.relatedPlaylists&&it.contentDetails.relatedPlaylists.uploads,desc:sn.description||""};
+}
+async function channelVideos(ch){
+  const pl=await yt("playlistItems",{part:"contentDetails",playlistId:ch.uploads,maxResults:50});
+  const ids=(pl.items||[]).map(i=>i.contentDetails.videoId).filter(Boolean);
+  if(!ids.length)return[];
+  const vj=await yt("videos",{part:"snippet,statistics,contentDetails",id:ids.join(",")});
+  return (vj.items||[]).filter(v=>v.snippet&&v.snippet.liveBroadcastContent==="none").map(v=>{
+    const dur=isoDur(v.contentDetails.duration);
+    return {id:v.id,ch:ch.id,t:v.snippet.title,v:+(v.statistics.viewCount||0),d:v.snippet.publishedAt,dur,fmt:dur>0&&dur<=SHORT_MAX?"short":"long"};
+  });
+}
+function scoreVideos(videos){
+  const groups={};
+  videos.forEach(v=>{(groups[v.ch+"|"+v.fmt]=groups[v.ch+"|"+v.fmt]||[]).push(v)});
+  const now=Date.now();
+  Object.values(groups).forEach(g=>{
+    const settled=g.filter(v=>now-Date.parse(v.d)>3*864e5).map(v=>v.v);
+    const med=median(settled.length>=3?settled:g.map(v=>v.v))||1;
+    g.forEach(v=>{v.med=med;v.x=Math.round(v.v/med*100)/100;v.fresh=now-Date.parse(v.d)<7*864e5});
+  });
+  return videos;
+}
+
+/* ================= atualização ================= */
+async function refresh(){
+  if(busy)return;
+  if(!KEY){location.hash="#config";showBanner("Cole sua chave gratuita da API do YouTube para buscar os dados ao vivo.","warn");return}
+  busy=true;const btn=$("#refreshBtn");btn.disabled=true;btn.innerHTML='<span class="spin"></span> Atualizando';
+  setAgent("radar","on","lendo canais…",5);renderFactory();
+  const channels={},videos=[],fails=[];
+  for(let i=0;i<HANDLES.length;i++){
+    const h=HANDLES[i];
+    setAgent("radar","on","lendo "+h+"…",Math.round(i/HANDLES.length*100));renderFactory();
+    try{
+      const ch=await resolveChannel(h);ch.mine=same(h,MY_HANDLE);channels[ch.id]=ch;
+      const vs=await channelVideos(ch);videos.push(...vs);
+      log("Radar","leu "+vs.length+" vídeos de "+ch.title,"radar");
+    }catch(e){
+      fails.push(h+": "+e.message);log("Radar","falhou em "+h+" ("+e.message+")","agenda");
+      if(["quota","key","disabled","referer","nokey","net"].includes(e.code)){showBanner(e.message,"err");break}
+    }
+  }
+  if(Object.keys(channels).length){
+    DATA={updated:new Date().toISOString(),channels,videos:scoreVideos(videos),sample:false};
+    store.set(LS.data,DATA);
+    const hot=DATA.videos.filter(v=>!v.mine&&v.x>=2).length;
+    log("Pauta",hot+" vídeos de concorrentes acima de 2x para revisar","pauta");
+    if(!fails.length)showBanner("Dados atualizados agora: "+Object.keys(channels).length+" canais, "+videos.length+" vídeos.","ok");
+    else if(fails.length&&!$("#banner").classList.contains("err"))showBanner(fails.length+" canal(is) não carregaram: "+fails.join(" · "),"warn");
+  }
+  busy=false;btn.disabled=false;btn.textContent="Atualizar dados";
+  setAgent("radar","on",DATA&&!DATA.sample?videos.length+" vídeos de "+Object.keys(channels).length+" canais":"aguardando chave",100);
+  renderAll();
+}
+
+/* ================= descobrir ================= */
+async function discoverSearch(q){
+  const msg=$("#discMsg");msg.textContent="Buscando…";
+  try{
+    const s=await yt("search",{part:"snippet",type:"channel",q,maxResults:25,relevanceLanguage:discLang,regionCode:discLang==="pt"?"BR":"US"},"search");
+    const ids=(s.items||[]).map(i=>i.snippet.channelId||(i.id&&i.id.channelId)).filter(Boolean);
+    const list=await channelsByIds(ids);
+    renderDisc(list.map(c=>({...c,why:"resultado da busca"})).sort((a,b)=>(b.subs||0)-(a.subs||0)));
+    msg.textContent=list.length?list.length+" canais encontrados para \""+q+"\". Os que já estão no radar ficaram de fora.":"Nenhum canal novo para esse tema.";
+  }catch(e){msg.textContent=e.message}
+}
+async function discoverFeatured(){
+  const msg=$("#discMsg");
+  const ids=Object.values((DATA&&!DATA.sample&&DATA.channels)||{}).filter(c=>!c.mine).map(c=>c.id);
+  if(!ids.length){msg.textContent="Atualize os dados primeiro: preciso dos IDs dos canais do radar.";return}
+  msg.textContent="Lendo os canais em destaque de "+ids.length+" canais…";
+  const freq={},by={};
+  for(const id of ids){
+    try{
+      const j=await yt("channelSections",{part:"contentDetails",channelId:id});
+      (j.items||[]).forEach(sec=>((sec.contentDetails&&sec.contentDetails.channels)||[]).forEach(c=>{
+        freq[c]=(freq[c]||0)+1;(by[c]=by[c]||new Set()).add(DATA.channels[id].title)}));
+    }catch(e){if(e.code==="quota"){msg.textContent=e.message;return}}
+  }
+  const cand=Object.keys(freq).sort((a,b)=>freq[b]-freq[a]).slice(0,50);
+  if(!cand.length){msg.textContent="Os canais do radar não indicam outros canais na página deles.";renderDisc([]);return}
+  try{
+    const list=await channelsByIds(cand);
+    renderDisc(list.map(c=>({...c,why:(()=>{const a=[...by[c.id]];return "indicado por "+a.slice(0,3).join(", ")+(a.length>3?" e mais "+(a.length-3):"")})(),n:freq[c.id]})).sort((a,b)=>b.n-a.n||(b.subs||0)-(a.subs||0)));
+    msg.textContent=list.length+" canais indicados pelos seus concorrentes.";
+  }catch(e){msg.textContent=e.message}
+}
+async function channelsByIds(ids){
+  const tracked=new Set(Object.keys((DATA&&DATA.channels)||{}));
+  ids=[...new Set(ids)].filter(id=>!tracked.has(id));
+  const out=[];
+  for(let i=0;i<ids.length;i+=50){
+    const j=await yt("channels",{part:"snippet,statistics,contentDetails",id:ids.slice(i,i+50).join(",")});
+    (j.items||[]).forEach(it=>out.push(chanFromItem(it,(it.snippet&&it.snippet.customUrl)||it.id)));
+  }
+  return out;
+}
+
+/* ================= amostra inicial (análise de 03/11) ================= */
+const SAMPLE=(()=>{const C={anomaly:["UC_sample_anomaly","Anomaly (amostra)"],juicy:["UC_sample_juicy","JuicyCSG"],shiny:["UC_sample_shiny","MasterShiny"],polex:["UC_sample_polex","Polex"]};
+  const channels={};Object.values(C).forEach(([id,t])=>channels[id]={id,title:t,handle:t,subs:null,count:0});
+  return {updated:"2026-11-03T11:00:00Z",sample:true,channels,videos:SAMPLE_VIDEOS.map((v,i)=>({id:"s"+i,ch:C[v.c][0],t:v.t,v:v.v,d:v.d+"T12:00:00Z",fmt:"long",x:v.x,fresh:false}))}})();
+
+/* ================= render: banner/carimbo/cota ================= */
+function showBanner(text,kind){const b=$("#banner");b.hidden=false;b.className="banner"+(kind==="ok"?" ok":kind==="err"?" err":"");$("#bannerText").textContent=text;$("#bannerBtn").hidden=kind==="ok"}
+function renderStamp(){const d=cur();$("#stamp").textContent=d.sample?"amostra de 03/11/2026":"atualizado "+new Date(d.updated).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}
+function renderQuota(){const q=store.get(LS.quota,{}),today=q.day===pacificDay();
+  const el=$("#quota");if(el)el.textContent=today?`Usadas hoje: ${q.units||0} de 10.000 unidades e ${q.search||0} de 100 buscas. Uma atualização completa usa cerca de ${HANDLES.length*3} unidades.`:`Nada usado hoje ainda. Uma atualização completa usa cerca de ${HANDLES.length*3} unidades de 10.000.`}
+const cur=()=>DATA&&!DATA.sample?DATA:SAMPLE;
+
+/* ================= render: fábrica ================= */
+const AGENTS=[
+ {k:"radar",n:"Radar",c:"var(--a-radar)",st:"on",msg:"",p:100},
+ {k:"pauta",n:"Pauta",c:"var(--a-pauta)",st:"on",msg:"6 pautas na fila",p:100},
+ {k:"roteiro",n:"Roteiro",c:"var(--a-roteiro)",st:"wait",msg:"espera pauta aprovada",p:15},
+ {k:"cortes",n:"Cortes",c:"var(--a-cortes)",st:"off",msg:"próxima fase: Whisper + ffmpeg",p:0},
+ {k:"titulos",n:"Títulos",c:"var(--a-titulos)",st:"on",msg:"prompt pronto para o Claude",p:100},
+ {k:"agenda",n:"Agenda",c:"var(--a-agenda)",st:"wait",msg:"grade pronta, postagem manual",p:40}
+];
+const ST={on:["aceso","on"],wait:["aguardando","wait"],off:["desligado","off"]};
+function setAgent(k,st,msg,p){const a=AGENTS.find(x=>x.k===k);Object.assign(a,{st,msg,p})}
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v.replace(/var\((.*)\)/,"$1")).trim()||v}
+function drawGrid(cv,rows,pal){const x=cv.getContext("2d");x.clearRect(0,0,cv.width,cv.height);rows.forEach((r,y)=>[...r].forEach((ch,i)=>{if(ch!=="."&&pal[ch]){x.fillStyle=pal[ch];x.fillRect(i,y,1,1)}}))}
+const DESK=["........................",".........A..............",".........A....MMMMMMMM..","......HHHHHHH.MSSSSSSM..","......HEHHHEH.MSSSSSSM..","......HHHHHHH.MSSSSSSM..","......HHMMMHH.MMMMMMMM..","......HHHHHHH....MM.....","....BBBBBBBBBBBBBBBBBB..","..TTTTTTTTTTTTTTTTTTTTT.","..TTTTTTTTTTTTTTTTTTTTT.","...L..................L.","...L..................L.","...L..................L.","........................","........................"];
+const YOU=["........................","..........YYYY..........",".........YYYYYY.........",".........YKYYKY.........",".........YYYYYY.........","..........YKKY..........","........RRRRRRRR........",".......RRRRRRRRRR.......",".......RR.RRRR.RR.......","...TTTTTTTTTTTTTTTTTT...","...TTTTTTTTTTTTTTTTTT...","....L..............L....","....L..............L....","........................","........................","........................"];
+const LOGO=["................","...YYYYYYYYYY...","..YYYYYYYYYYYY..","..YKKYYYYYYKKY..","..YKKYYYYYYKKY..","..YYYYYYYYYYYY..","..YYYKKKKKKYYY..","..YYYYYYYYYYYY..","...YYYYYYYYYY...","......YYYY......","....RRRRRRRR....","...RRRRRRRRRR...","...RR.RRRR.RR...","...RR.RRRR.RR...","................","................"];
+function paintSprites(){drawGrid($("#logo"),LOGO,{Y:css("--yellow"),K:"#1b1600",R:css("--a-radar")});drawGrid($("#youSprite"),YOU,{Y:"#1b1600",K:css("--yellow"),R:"#3a2f00",T:"#1b1600",L:"#1b1600"})}
+function renderFactory(){
+  const r=AGENTS[0];if(!r.msg)r.msg=cur().sample?"mostrando amostra; falta a chave":cur().videos.length+" vídeos de "+Object.keys(cur().channels).length+" canais";
+  const wrap=$("#desks");wrap.innerHTML="";
+  AGENTS.forEach((a,i)=>{
+    const d=document.createElement("div");d.className="desk";d.style.setProperty("--c",a.c);const lit=a.st!=="off";
+    d.innerHTML=`<div class="bubble">${esc(a.msg)}</div><canvas width="24" height="16" aria-hidden="true"></canvas><div class="name"><i>${i+1}</i>${a.n}</div><div class="bar"><b style="width:${a.p}%"></b></div><span class="pill ${ST[a.st][1]}">${ST[a.st][0]}</span>`;
+    wrap.appendChild(d);const col=css(a.c);
+    drawGrid(d.querySelector("canvas"),DESK,{A:lit?col:"#55607f",H:lit?col:"#3b4566",E:lit?"#0d1022":"#2a3150",M:"#0d1022",S:lit?col+"99":"#2a3150",B:"#6b4a2b",T:"#8a6238",L:"#4d3720"});
+  });
+  $("#legend").innerHTML=AGENTS.map(a=>`<div style="--c:${a.c}"><s></s>${a.n} <span class="pill ${ST[a.st][1]}" style="margin-left:auto">${ST[a.st][0]}</span></div>`).join("");
+  const ap=PAUTAS.filter(p=>PSTATE[p.id]==="aprovada").length,pend=PAUTAS.filter(p=>!PSTATE[p.id]).length;
+  $("#youText").textContent=pend?`Nada vai ao ar sem o seu OK. ${pend} pauta(s) esperando você.`:`Fila zerada. ${ap} pauta(s) aprovada(s) seguem para o Roteiro.`;
+  $("#qcount").textContent=pend;
+}
+function renderLog(){
+  const base=LOG.length?LOG:[{who:"Radar",txt:cur().sample?"mostrando a análise de 03/11 até você salvar a chave":"dados de "+fmtD(cur().updated)+" carregados",c:"radar"},{who:"Pauta",txt:"6 pautas montadas para o noobgo",c:"pauta"}];
+  $("#log").innerHTML=base.map(l=>`<li style="--c:var(--a-${l.c})"><b>[${esc(l.who)}]</b> ${esc(l.txt)}</li>`).join("");
+}
+
+/* ================= render: radar ================= */
+function chanColor(id){const ids=Object.keys(cur().channels);const c=cur().channels[id];if(c&&c.mine)return"var(--yellow)";return PALETTE[Math.max(0,ids.indexOf(id))%PALETTE.length]}
+function chanName(id){const c=cur().channels[id];return c?(c.mine?"Seu canal":c.title):"?"}
+function filtered(){
+  const d=cur(),now=Date.now();
+  return d.videos.filter(v=>v.fmt===UI.fmt&&(UI.ch==="all"?!d.channels[v.ch]||!d.channels[v.ch].mine:v.ch===UI.ch)&&(!UI.per||now-Date.parse(v.d)<=UI.per*864e5));
+}
+function sortList(list){
+  const k=UI.sk,dir=UI.sd==="asc"?1:-1;
+  return list.slice().sort((a,b)=>{const A=k==="d"?Date.parse(a.d):a[k],B=k==="d"?Date.parse(b.d):b[k];return (A-B)*dir||(b.x-a.x)});
+}
+function renderRadar(){
+  const d=cur(),list=sortList(filtered());
+  const max=Math.max(1,...list.map(v=>v.x));
+  $("#rows").innerHTML=list.length?list.map((v,i)=>{const c=chanColor(v.ch);const link=d.sample?esc(v.t):`<a class="vid" href="https://www.youtube.com/${v.fmt==="short"?"shorts/":"watch?v="}${v.id}" target="_blank" rel="noopener">${esc(v.t)}</a>`;
+    return `<tr><td class="mono">${i+1}</td><td class="t"><span class="ch" style="--c:${c}">${esc(chanName(v.ch))}</span>${v.fresh?'<span class="new" title="publicado há menos de 7 dias, ainda acumulando views">NOVO</span>':""}<br>${link}</td>
+    <td><div class="mult" style="--c:${c}"><b class="${v.x>=2?"hot":""}">${fmtX(v.x)}</b><i style="width:${Math.max(3,v.x/max*110)}px"></i></div></td>
+    <td class="mono">${fmtN(v.v)}</td><td class="mono">${fmtD(v.d)}</td></tr>`}).join("")
+    :`<tr><td colspan="5"><div class="empty">Nenhum vídeo com esses filtros.${d.sample&&UI.fmt==="short"?" A amostra só tem vídeos longos; salve sua chave para ver os Shorts.":""}</div></td></tr>`;
+  document.querySelectorAll("th[data-k]").forEach(th=>{if(th.dataset.k===UI.sk)th.setAttribute("aria-sort",UI.sd==="asc"?"ascending":"descending");else th.removeAttribute("aria-sort")});
+  document.querySelectorAll("#fmt .chip").forEach(c=>c.setAttribute("aria-pressed",c.dataset.fmt===UI.fmt));
+  document.querySelectorAll("[data-per]").forEach(c=>c.setAttribute("aria-pressed",+c.dataset.per===UI.per));
+  document.querySelectorAll("#filters .chip").forEach(c=>c.setAttribute("aria-pressed",c.dataset.f===UI.ch));
+  const all=d.videos.filter(v=>!d.channels[v.ch]||!d.channels[v.ch].mine);
+  $("#k1").textContent=all.length;
+  $("#k2").textContent=new Set(all.map(v=>v.ch)).size;
+  $("#k3").textContent=all.length?fmtX(Math.max(...all.map(v=>v.x))):"–";
+  $("#k4").textContent=all.filter(v=>v.x>=2).length;
+  $("#radarNote").textContent=d.sample?"Você está vendo a amostra coletada em 03/11 (4 canais, só vídeos longos). Salve sua chave em Configuração e clique em Atualizar dados para ler todos os canais ao vivo.":"Vídeos com até 3 minutos contam como Shorts. Vídeos com menos de 3 dias ficam fora do cálculo da mediana, porque ainda estão ganhando views.";
+  store.set(LS.ui,UI);
+}
+function renderFilters(){
+  const d=cur(),ids=Object.keys(d.channels).sort((a,b)=>(d.channels[b].mine?1:0)-(d.channels[a].mine?1:0));
+  $("#filters").innerHTML=`<button class="chip" type="button" data-f="all">Todos os concorrentes</button>`+ids.map(id=>`<button class="chip" type="button" data-f="${id}" style="--c:${chanColor(id)}"><s></s>${esc(chanName(id))}</button>`).join("");
+  if(UI.ch!=="all"&&!d.channels[UI.ch])UI.ch="all";
+}
+function renderChanList(){
+  const d=cur(),byHandle={};Object.values(d.channels).forEach(c=>{byHandle[(c.handle||"").toLowerCase()]=c});
+  $("#chlist").innerHTML=HANDLES.map(h=>{const c=byHandle[h.toLowerCase()];const mine=same(h,MY_HANDLE);
+    const info=c&&!d.sample?`${fmtN(c.subs)} inscritos`:d.sample?"":"sem dados ainda";
+    return `<li><span class="who" style="--c:${c?chanColor(c.id):"var(--line)"}"><s></s><a href="https://www.youtube.com/${/^UC/.test(h)?"channel/"+h:esc(h)}" target="_blank" rel="noopener">${esc(c&&!d.sample?c.title:h)}</a>${mine?'<span class="pill on">você</span>':""}</span>
+    <span style="display:flex;gap:8px;align-items:center"><span class="muted mono">${info}</span>${mine?"":`<button class="x" type="button" data-rm="${esc(h)}" aria-label="Tirar ${esc(h)} do radar">tirar</button>`}</span></li>`}).join("");
+}
+
+/* ================= render: descobrir ================= */
+function renderDisc(list){
+  $("#disc").innerHTML=list.map(c=>{const avg=c.count?Math.round(c.views/c.count):0;const inRadar=HANDLES.some(h=>same(h,c.handle)||h===c.id);
+    return `<div class="dcard"><div class="top">${c.thumb?`<img src="${esc(c.thumb)}" alt="" width="40" height="40" loading="lazy" referrerpolicy="no-referrer">`:""}<div style="min-width:0"><h4><a href="https://www.youtube.com/channel/${c.id}" target="_blank" rel="noopener">${esc(c.title)}</a></h4><span class="muted mono">${esc(c.handle)}${c.country?" · "+esc(c.country):""}</span></div></div>
+    <div class="stats"><span class="tag">${fmtN(c.subs)} inscritos</span><span class="tag">${fmtN(avg)} views/vídeo</span><span class="tag">${c.count} vídeos</span></div>
+    <span class="why">${esc(c.why)}</span><p>${esc(c.desc)}</p>
+    <button class="btn ${inRadar?"":"y"}" type="button" data-add="${esc(c.handle&&c.handle.startsWith("@")?c.handle:c.id)}" ${inRadar?"disabled":""}>${inRadar?"Já está no radar":"Adicionar ao radar"}</button></div>`}).join("")||'<div class="empty">Nada para mostrar ainda.</div>';
+}
+
+/* ================= pautas ================= */
+const PAUTAS=[
+ {id:"p1",t:"A VALVE MUDOU O TRADE UP DE NOVO: o que acontece com o preço das suas skins",s:"3,7x",risk:"baixo",fmt:"Longo 10–14 min + 3 shorts",why:"O padrão mais forte do radar. Grave no dia da próxima atualização: a velocidade conta mais que a edição.",ev:[["3,7x","Anomaly · KNIFE TRADEUP UPDATE"],["1,4x","Anomaly · VALVE CHANGED THE MARKET FOREVER"],["1,1x","MasterShiny · update crashed this market"]]},
+ {id:"p2",t:"Fiz 30 trade ups de uma vez e olha o que veio (R$ 2.000 investidos)",s:"3,7x",risk:"médio",fmt:"Longo 12 min + 4 shorts dos melhores drops",why:"Desafio com valor no título. Use um valor que seja real para você; o público brasileiro reage a reais, não a dólares.",ev:[["3,7x","JuicyCSG · 50 Gold Trade Ups ($25,000)"],["0,3x","MasterShiny · traded up every skin (sem valor no título)"]]},
+ {id:"p3",t:"A carta da Valve que ninguém leu: o que muda no seu inventário",s:"2,3x",risk:"baixo",fmt:"Longo 8–10 min + 2 shorts",why:"Explicar um comunicado oficial em português é um espaço vazio: os canais gringos fazem, os brasileiros quase não.",ev:[["2,3x","MasterShiny · Valve's New Letter Is Crazy"],["1,4x","MasterShiny · Valve Just Turned THIS OFF"]]},
+ {id:"p4",t:"ÚLTIMA CHANCE antes da atualização: o que eu compraria hoje",s:"2,0x",risk:"baixo",fmt:"Longo 8 min + 3 shorts",why:"Já é o seu formato (\"MONTE INVENTÁRIO AGORA\"). Rende o dobro no nicho quando tem prazo no título.",ev:[["2,0x","MasterShiny · LAST CHANCE best CS2 investment"],["2,0x","MasterShiny · CS2's Next Update Is Massive?"]]},
+ {id:"p5",t:"Abri caixas até vir um padrão raro (e calculei se valeu a pena)",s:"1,7x",risk:"médio",fmt:"Longo 15 min + 5 shorts das reações",why:"Abertura de caixa oscila muito. O diferencial é a conta no final: lucro ou prejuízo real.",ev:[["1,7x","Anomaly · BEST CASE OPENING EVER"],["0,2x","Anomaly · NEW GENESIS CASE OPENING"]]},
+ {id:"p6",t:"Os golpes do mercado de skins em 2026 (e como eu protejo meu inventário)",s:"?",risk:"alto",fmt:"Longo 10 min + 3 shorts",why:"Tema forte nos títulos do biskela, ainda sem números. Confira no radar depois de atualizar os dados.",ev:[["s/d","biskela · golpes do mercado / trade protect"]]}
+];
+function promptFor(p){return `Você escreve títulos para o canal brasileiro de YouTube "noobgo", sobre mercado de skins de CS2 (tom direto, urgência, CAPS em 1-3 palavras-chave, sem clickbait mentiroso).
+Pauta: "${p.t}". Por que funciona: ${p.why}
+Evidência de outliers: ${p.ev.map(e=>e[0]+" "+e[1]).join("; ")}.
+Entregue em português do Brasil, sem introdução:
+LONGO (YouTube, até 70 caracteres): 3 opções numeradas.
+SHORTS/TIKTOK (até 50 caracteres): 3 opções numeradas.
+DESCRIÇÃO CURTA PARA SHORTS: 1 frase + 3 hashtags.`}
+function renderQueue(){
+  $("#queue").innerHTML=PAUTAS.map(p=>{const s=PSTATE[p.id];return `<article class="pcard" data-id="${p.id}">
+    <div class="head"><h3>${esc(p.t)}</h3><span class="score" title="maior multiplicador da evidência">${p.s}</span></div>
+    <div class="body">${s?`<span class="status ${s}">${s==="aprovada"?"✓ aprovada":"↻ revisar"}</span>`:""}
+      <p>${esc(p.why)}</p>
+      <div><div class="eyebrow" style="margin-bottom:4px">Evidência</div><ul class="ev">${p.ev.map(e=>`<li><b>${e[0]}</b><span>${esc(e[1])}</span></li>`).join("")}</ul></div>
+      <div class="tags"><span class="tag">${p.fmt}</span><span class="tag risk-${p.risk}">risco ${p.risk}</span></div>
+      <textarea class="titles" id="tt-${p.id}" readonly hidden rows="7" style="width:100%;font:13px var(--f-mono);color:var(--ink);resize:vertical"></textarea></div>
+    <div class="actions"><button class="btn y" type="button" data-a="aprovada">${s==="aprovada"?"Desfazer":"Aprovar"}</button><button class="btn" type="button" data-a="revisar">Revisar</button><button class="btn" type="button" data-a="prompt">Copiar prompt</button></div></article>`}).join("");
+}
+
+/* ================= agenda ================= */
+function renderWeek(){
+  const days=["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"],ap=PAUTAS.filter(p=>PSTATE[p.id]==="aprovada");
+  const plan={0:[["short","18h"]],2:[["longo","12h"],["short","18h"]],4:[["short","18h"]],5:[["short","18h"]]};let li=0,si=0;
+  $("#week").innerHTML=days.map((d,i)=>`<div class="day"><h4>${d}</h4>${(plan[i]||[]).map(([kind,h])=>{let label;
+    if(kind==="longo"){const p=ap[li++];label=p?p.t:"espaço livre: aprove uma pauta"}else{const p=ap[si%Math.max(ap.length,1)];si++;label=p?"corte de: "+p.t:"espaço livre"}
+    return `<div class="slot" style="--c:${kind==="longo"?"var(--yellow)":"var(--a-cortes)"}"><b>${h} · ${kind==="longo"?"VÍDEO LONGO":"SHORT · YT + TikTok"}</b>${esc(label)}</div>`}).join("")||'<span class="note" style="margin:0">descanso</span>'}</div>`).join("");
+}
+
+/* ================= eventos ================= */
+document.addEventListener("click",async e=>{
+  const t=e.target.closest("button");if(!t)return;
+  if(t.id==="refreshBtn")return refresh();
+  if(t.classList.contains("sort")){const k=t.dataset.k;if(UI.sk===k)UI.sd=UI.sd==="desc"?"asc":"desc";else{UI.sk=k;UI.sd="desc"}return renderRadar()}
+  if(t.dataset.fmt){UI.fmt=t.dataset.fmt;return renderRadar()}
+  if(t.dataset.per!=null){UI.per=+t.dataset.per;return renderRadar()}
+  if(t.dataset.f){UI.ch=t.dataset.f;return renderRadar()}
+  if(t.dataset.rm){HANDLES=HANDLES.filter(h=>h!==t.dataset.rm);store.set(LS.handles,HANDLES);renderChanList();renderQuota();$("#addMsg").textContent=t.dataset.rm+" saiu do radar. Atualize os dados para refazer as contas.";return}
+  if(t.dataset.add){addHandle(t.dataset.add);t.disabled=true;t.textContent="Adicionado";t.classList.remove("y");return}
+  if(t.dataset.lang){discLang=t.dataset.lang;document.querySelectorAll("[data-lang]").forEach(b=>b.setAttribute("aria-pressed",b===t));return}
+  if(t.id==="featBtn")return discoverFeatured();
+  if(t.id==="clearKey"){KEY="";store.del(LS.key);$("#apiKey").value="";$("#keyMsg").textContent="Chave apagada deste navegador.";return}
+  const card=t.closest(".pcard");
+  if(card&&t.dataset.a){
+    const id=card.dataset.id,a=t.dataset.a,p=PAUTAS.find(x=>x.id===id);
+    if(a==="prompt"){const box=$("#tt-"+id),txt=promptFor(p);box.value=txt;box.hidden=false;
+      try{await navigator.clipboard.writeText(txt);t.textContent="Copiado! Cole no Claude"}catch(err){box.select();t.textContent="Selecionado: copie com Ctrl+C"}
+      setTimeout(()=>{t.textContent="Copiar prompt"},3000);return}
+    PSTATE[id]=PSTATE[id]===a?undefined:a;if(!PSTATE[id])delete PSTATE[id];store.set(LS.pautas,PSTATE);renderQueue();renderFactory();renderWeek();
+  }
+});
+function addHandle(raw){
+  const h=normHandle(raw);
+  if(!h){$("#addMsg").textContent="Cole um @handle ou o link do canal.";return false}
+  if(HANDLES.some(x=>same(x,h))){$("#addMsg").textContent=h+" já está no radar.";return false}
+  HANDLES.push(h);store.set(LS.handles,HANDLES);renderChanList();renderQuota();
+  $("#addMsg").textContent=h+" entrou no radar. Clique em Atualizar dados para ler os vídeos dele.";return true;
+}
+$("#addForm").addEventListener("submit",e=>{e.preventDefault();if(addHandle($("#addHandle").value))$("#addHandle").value=""});
+$("#searchForm").addEventListener("submit",e=>{e.preventDefault();const q=$("#q").value.trim();if(q)discoverSearch(q)});
+$("#keyForm").addEventListener("submit",async e=>{
+  e.preventDefault();const v=$("#apiKey").value.trim();const msg=$("#keyMsg");
+  if(!v){msg.textContent="Cole a chave antes de salvar.";return}
+  KEY=v;store.set(LS.key,KEY);msg.textContent="Testando a chave…";
+  try{const c=await resolveChannel(MY_HANDLE);msg.textContent="Chave funcionando. Encontrei "+c.title+" com "+fmtN(c.subs)+" inscritos. Buscando os dados de todos os canais…";location.hash="#radar";refresh()}
+  catch(err){msg.textContent=err.message}
+});
+
+/* ================= rotas ================= */
+const VIEWS=["fabrica","radar","descobrir","pautas","agenda","config"];
+function route(){
+  const v=VIEWS.includes(location.hash.slice(1))?location.hash.slice(1):"fabrica";
+  document.querySelectorAll("section.view").forEach(s=>s.hidden=s.id!=="v-"+v);
+  document.querySelectorAll("nav.tabs a").forEach(a=>{if(a.dataset.v===v)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current")});
+}
+addEventListener("hashchange",route);
+
+/* ================= início ================= */
+function renderAll(){renderStamp();renderFilters();renderRadar();renderChanList();renderFactory();renderLog();renderQuota()}
+paintSprites();renderQueue();renderWeek();renderAll();route();
+if(KEY)$("#apiKey").value=KEY;
+if(!KEY)showBanner("Você está vendo a amostra de 03/11. Cole sua chave gratuita da API do YouTube para ler todos os canais ao vivo.","warn");
+else if(!DATA||DATA.sample)refresh();
+else if(Date.now()-Date.parse(DATA.updated)>12*3600e3)showBanner("Os dados têm mais de 12 horas. Clique em Atualizar dados para buscar os números de hoje.","warn");
+
+</script>
+</body>
+</html>
